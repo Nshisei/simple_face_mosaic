@@ -15,9 +15,9 @@ def face_detection_using_mediapipe():
         with mp_face_detection.FaceDetection(min_detection_confidence=min_detection_confidence) as face_detection:
             image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             results = face_detection.process(image_rgb)
-
             if results.detections:
                 for detection in results.detections:
+                    
                     bbox = detection.location_data.relative_bounding_box
                     h, w, _ = image.shape
                     x_min = int(bbox.xmin * w)
@@ -27,13 +27,17 @@ def face_detection_using_mediapipe():
 
                     # 検出の信頼度を取得して表示
                     confidence = detection.score[0]
+                    if min_detection_confidence > confidence:
+                        break
                     text = f'{confidence:.2f}'
-                    cv2.putText(image, text, (x_min, y_min - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
+                    cv2.putText(image, text, (x_min, y_min - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
 
 
                     # カバー画像を重ねる
                     overlay_size = (int(box_width * 1.5), int(box_height * 1.5))
+                    print("detection process")
                     image = overlay_image_alpha(image, x_min + box_width // 2, y_min + box_height // 2, overlay_size)
+                    print("end overlay")
         
         return av.VideoFrame.from_ndarray(image, format="bgr24")
 
@@ -79,7 +83,7 @@ def face_mesh_using_mediapipe():
         return av.VideoFrame.from_ndarray(image, format="bgr24")
 
     webrtc_streamer(
-        key="face-overlay-mediapipe",
+        key="facemesh-overlay-mediapipe",
         video_frame_callback=callback,
         async_processing=True,
         media_stream_constraints={'video': True, 'audio': False},

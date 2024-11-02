@@ -1,13 +1,16 @@
 import cv2
-cover_img = cv2.imread("./img/face_img.png")
+import numpy as np
+cover_img = cv2.imread("./img/face_img.png", cv2.IMREAD_UNCHANGED)
 
 def overlay_image_alpha(img, x, y, overlay_size=None):
-    """アルファチャンネル付きの画像を、範囲内に収まるように重ね合わせる"""
+    print("start overlay")
+    if cover_img is None:
+        return img
+    overlay_img = cover_img.copy()
     if overlay_size is not None:
-        cover_img = cv2.resize(cover_img, overlay_size)
-
+        overlay_img = cv2.resize(overlay_img, overlay_size)
     # カバー画像の中心を外接矩形の中心に合わせる
-    h, w = cover_img.shape[:2]
+    h, w = overlay_img.shape[:2]
     x -= w // 2
     y -= h // 2
 
@@ -21,14 +24,21 @@ def overlay_image_alpha(img, x, y, overlay_size=None):
     overlay_height = y_end - y
     if overlay_width <= 0 or overlay_height <= 0:
         return img  # 重ね合わせが不要
-
     # 画像の一部を切り取る
-    b, g, r, a = cv2.split(cover_img)
-    overlay_color = cv2.merge((b, g, r))
-    mask = cv2.merge((a, a, a)) / 255.0
+    # アルファチャンネルの確認
+    if overlay_img.shape[2] == 4:
+        # アルファチャンネルがある場合
+        b, g, r, a = cv2.split(overlay_img)
+        overlay_color = cv2.merge((b, g, r))
+        mask = a / 255.0
+        mask = np.stack((mask,) * 3, axis=-1)
+    else:
+        # アルファチャンネルがない場合
+        overlay_color = overlay_img
+        mask = np.ones_like(overlay_color, dtype=np.float32)
 
-    # 元の画像に上書き
+    # 元の画像の該当部分を取得
     img[y:y+overlay_height, x:x+overlay_width] = (
-        1.0 - mask[:overlay_height, :overlay_width]) * img[y:y+overlay_height, x:x+overlay_width] + \
-        mask[:overlay_height, :overlay_width] * overlay_color[:overlay_height, :overlay_width]
+            1.0 - mask[:overlay_height, :overlay_width]) * img[y:y+overlay_height, x:x+overlay_width] + \
+            mask[:overlay_height, :overlay_width] * overlay_color[:overlay_height, :overlay_width]
     return img
