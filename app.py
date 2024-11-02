@@ -13,29 +13,78 @@ def face_detection_using_mediapipe():
         mp_face_detection = mp.solutions.face_detection
         image = frame.to_ndarray(format="bgr24")
         with mp_face_detection.FaceDetection(min_detection_confidence=min_detection_confidence) as face_detection:
-            # 画像の左右反転
-            image = cv2.flip(image, 1)
-            image.flags.writeable = False
-            results = face_detection.process(image)
-            
-            # 顔検出された場合、各顔にカバー画像を適用
+            image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            results = face_detection.process(image_rgb)
+
             if results.detections:
                 for detection in results.detections:
-                    # 顔の外接矩形を取得
                     bbox = detection.location_data.relative_bounding_box
                     h, w, _ = image.shape
                     x_min = int(bbox.xmin * w)
                     y_min = int(bbox.ymin * h)
                     box_width = int(bbox.width * w)
                     box_height = int(bbox.height * h)
-                    
+
+                    # 検出の信頼度を取得して表示
+                    confidence = detection.score[0]
+                    text = f'{confidence:.2f}'
+                    cv2.putText(image, text, (x_min, y_min - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
+
+
                     # カバー画像を重ねる
                     overlay_size = (int(box_width * 1.5), int(box_height * 1.5))
                     image = overlay_image_alpha(image, x_min + box_width // 2, y_min + box_height // 2, overlay_size)
-            
-            return av.VideoFrame.from_ndarray(image, format="bgr24")
+        
+        return av.VideoFrame.from_ndarray(image, format="bgr24")
 
     webrtc_streamer(key="face-overlay-mediapipe", video_frame_callback=callback, async_processing=True, media_stream_constraints={'video': True, 'audio': False}, rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]})
+
+# 顔検出とFaceMeshを使用した関数
+def face_mesh_using_mediapipe():
+    min_detection_confidence = st.slider('Min Detection Confidence', min_value=0.0, max_value=1.0, value=0.5, step=0.1)
+
+    def callback(frame):
+        mp_face_detection = mp.solutions.face_detection
+        mp_face_mesh = mp.solutions.face_mesh
+        mp_drawing = mp.solutions.drawing_utils
+        mp_drawing_styles = mp.solutions.drawing_styles
+        drawing_spec = mp_drawing.DrawingSpec(thickness=1, circle_radius=1)
+
+        image = frame.to_ndarray(format="bgr24")
+        
+        # FaceDetectionとFaceMeshを使用
+        with mp_face_mesh.FaceMesh(static_image_mode=False, max_num_faces=1, min_detection_confidence=min_detection_confidence) as face_mesh:
+
+            image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            results_mesh = face_mesh.process(image_rgb)
+
+            if results_mesh.multi_face_landmarks:
+                for face_landmarks in results_mesh.multi_face_landmarks:
+                    # それぞれの接続を描画
+                    mp_drawing.draw_landmarks(
+                        image=image,
+                        landmark_list=face_landmarks,
+                        connections=mp_face_mesh.FACEMESH_TESSELATION,
+                        landmark_drawing_spec=drawing_spec,
+                        connection_drawing_spec=mp_drawing_styles.get_default_face_mesh_tesselation_style()
+                    )
+                    mp_drawing.draw_landmarks(
+                        image=image,
+                        landmark_list=face_landmarks,
+                        connections=mp_face_mesh.FACEMESH_CONTOURS,
+                        landmark_drawing_spec=drawing_spec,
+                        connection_drawing_spec=mp_drawing_styles.get_default_face_mesh_contours_style()
+                    )
+
+        return av.VideoFrame.from_ndarray(image, format="bgr24")
+
+    webrtc_streamer(
+        key="face-overlay-mediapipe",
+        video_frame_callback=callback,
+        async_processing=True,
+        media_stream_constraints={'video': True, 'audio': False},
+        rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
+    )
 
 def face_detection_using_opencv():
 
@@ -89,10 +138,12 @@ def main():
     st.title('Moke up app')
 
     select_app = st.sidebar.radio('app', ('Face Detection using Mediapipe', 
+                                          'Face Mesh using Mediapipe',
                                           'Face Detection using Opencv', ))
     
     func_dict = {
     'Face Detection using Mediapipe': face_detection_using_mediapipe,
+    'Face Mesh using Mediapipe': face_mesh_using_mediapipe,
     'Face Detection using Opencv': face_detection_using_opencv,
     }
 
