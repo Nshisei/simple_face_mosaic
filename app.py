@@ -8,10 +8,7 @@ import os
 from face_cover import overlay_image_alpha
 import os
 import sys
-current_dir = os.path.dirname(__file__)
-ar_dir = os.path.join(current_dir, 'AR')
-sys.path.append(ar_dir)
-from apply_filter import apply_face_mask, getLandmarks
+from face_mask.apply_filter import apply_face_mask, getLandmarks
 
 def face_detection_using_mediapipe():
     min_detection_confidence = st.slider('Min Detection Confidence', min_value=0.0, max_value=1.0, value=0.5, step=0.1)

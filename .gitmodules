@@ -1,0 +1,3 @@
+[submodule "AR"]
+	path = AR
+	url = https://github.com/judsongroups/AR-Filters-using-Mediapipe-deployed-with-fastapi.git
