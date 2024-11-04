@@ -51,7 +51,8 @@ def face_mesh_using_mediapipe():
     min_detection_confidence = st.slider('Min Detection Confidence', min_value=0.0, max_value=1.0, value=0.5, step=0.1)
 
     def callback(frame):
-        points2 = getLandmarks(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), min_detection_confidence=0.3)
+        points2 = getLandmarks(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), min_detection_confidence=min_detection_confidence)
+        print(len(points2))
         image = apply_face_mask(frame, points2)
 
         return av.VideoFrame.from_ndarray(image, format="bgr24")
