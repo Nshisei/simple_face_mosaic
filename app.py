@@ -51,9 +51,13 @@ def face_mesh_using_mediapipe():
     min_detection_confidence = st.slider('Min Detection Confidence', min_value=0.0, max_value=1.0, value=0.5, step=0.1)
 
     def callback(frame):
-        points2 = getLandmarks(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), min_detection_confidence=min_detection_confidence)
-        print(len(points2))
-        image = apply_face_mask(frame, points2)
+        frame = frame.to_ndarray(format="bgr24")
+        frame = cv2.resize(frame, (1280, 960))
+        points2 = getLandmarks(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), max_num_faces=10, min_detection_confidence=min_detection_confidence)
+        if len(points2) == 0:
+            image = frame
+        else:
+            image = apply_face_mask(frame, "smily", points2)
 
         return av.VideoFrame.from_ndarray(image, format="bgr24")
 
@@ -65,65 +69,15 @@ def face_mesh_using_mediapipe():
         rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
     )
 
-def face_detection_using_opencv():
-
-    def callback(frame):
-        face_cascade = cv2.CascadeClassifier('./haarcascade_frontalface_default.xml')
-        face_cascade_profile = cv2.CascadeClassifier('./haarcascade_profileface.xml')
-
-        image = frame.to_ndarray(format="bgr24")
-        src_gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-
-        def combine_rects(rects):
-            """複数の矩形領域を結合して外接矩形を作成する"""
-            if len(rects) == 0:
-                return None
-            x_min = min([x for (x, y, w, h) in rects])
-            y_min = min([y for (x, y, w, h) in rects])
-            x_max = max([x + w for (x, y, w, h) in rects])
-            y_max = max([y + h for (x, y, w, h) in rects])
-            return (x_min, y_min, x_max - x_min, y_max - y_min)
-        
-        # 顔検出
-        faces1 = face_cascade.detectMultiScale(src_gray)
-        faces2 = face_cascade_profile.detectMultiScale(src_gray)
-
-        # 画像を左右反転して横顔の検出を試みる
-        flipped_gray = cv2.flip(src_gray, 1)
-        faces3 = face_cascade_profile.detectMultiScale(flipped_gray)
-
-        # 反転した座標を元に戻す
-        frame_width = frame.shape[1]
-        faces3 = [(frame_width - x - w, y, w, h) for (x, y, w, h) in faces3]
-
-        # すべての顔領域を結合
-        all_faces = list(faces1) + list(faces2) + faces3
-
-        # 重なっている領域を1つにまとめる
-        combined_face_rect = combine_rects(all_faces)
-        if combined_face_rect:
-            x, y, w, h = combined_face_rect
-            cx, cy = x + w // 2, y + h // 2  # 中心座標を計算
-
-            # カバー画像を重ねる
-            frame = overlay_image_alpha(frame, cx, cy, overlay_size=(w,h))
-                    
-            return av.VideoFrame.from_ndarray(image, format="bgr24")
-
-
-    webrtc_streamer(key="face-overlay-opencv", video_frame_callback=callback, async_processing=True, media_stream_constraints={'video': True, 'audio': False}, rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]})
-
 def main():
     st.title('Moke up app')
 
     select_app = st.sidebar.radio('app', ('Face Detection using Mediapipe', 
-                                          'Face Mesh using Mediapipe',
-                                          'Face Detection using Opencv', ))
+                                          'Face Mesh using Mediapipe'))
     
     func_dict = {
     'Face Detection using Mediapipe': face_detection_using_mediapipe,
     'Face Mesh using Mediapipe': face_mesh_using_mediapipe,
-    'Face Detection using Opencv': face_detection_using_opencv,
     }
 
     func_dict.get(select_app, lambda: st.error('Invalid Selection'))()    

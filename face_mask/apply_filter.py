@@ -49,11 +49,19 @@ filters_config = {
         [{'path': "filters/flower-crown.png",
           'anno_path': "filters/flower-crown.csv",
           'morph': False, 'animated': False, 'has_alpha': True}],
+    'smile':
+        [{'path': "filters/smile.png",
+          'anno_path': "filters/smile.csv",
+          'morph': True, 'animated': False, 'has_alpha': True}],
+    'smily':
+        [{'path': "filters/smily.png",
+          'anno_path': "filters/smily.csv",
+          'morph': True, 'animated': False, 'has_alpha': True}],
 }
 
 
 # detect facial landmarks in image
-def getLandmarks(img, min_detection_confidence):
+def getLandmarks(img, min_detection_confidence=0.5, max_num_faces=10):
     mp_face_mesh = mp.solutions.face_mesh
     selected_keypoint_indices = [127, 93, 58, 136, 150, 149, 176, 148, 152, 377, 400, 378, 379, 365, 288, 323, 356, 70, 63, 105, 66, 55,
                  285, 296, 334, 293, 300, 168, 6, 195, 4, 64, 60, 94, 290, 439, 33, 160, 158, 173, 153, 144, 398, 385,
@@ -62,13 +70,13 @@ def getLandmarks(img, min_detection_confidence):
 
     height, width = img.shape[:-1]
 
-    with mp_face_mesh.FaceMesh(max_num_faces=1, static_image_mode=True, min_detection_confidence=0.5) as face_mesh:
+    with mp_face_mesh.FaceMesh(max_num_faces=max_num_faces, static_image_mode=True, min_detection_confidence=min_detection_confidence) as face_mesh:
 
         results = face_mesh.process(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
 
         if not results.multi_face_landmarks:
             print('Face not detected!!!')
-            return 0
+            return []
 
         for face_landmarks in results.multi_face_landmarks:
             values = np.array(face_landmarks.landmark)
@@ -87,7 +95,7 @@ def getLandmarks(img, min_detection_confidence):
             for i in selected_keypoint_indices:
                 relevant_keypnts.append(face_keypnts[i])
             return relevant_keypnts
-    return 0
+    return []
 
 
 def load_filter_img(img_path, has_alpha):
@@ -149,6 +157,7 @@ def load_filter(filter_name="dog"):
         temp_dict['img_a'] = img1_alpha
 
         points = load_landmarks(os.path.join(current_dir, filter['anno_path']))
+        print("load points", len(points))
 
         temp_dict['points'] = points
 
@@ -177,18 +186,19 @@ def load_filter(filter_name="dog"):
     return filters, multi_filter_runtime
 
 
-def apply_face_mask(frame, points2):
+def apply_face_mask(frame, mask_name, points2):
     """
     顔にフィルターをかけるメイン処理
     :param frame: ビデオフレーム
+    :param mask_name: 使用するフィルター名
+    :param points2: フィルター適用対象の顔の特徴点
     :return: マスクが適用されたフレーム
     """
-
     # 顔が検出されなかった場合の処理
     if not points2 or len(points2) != 75:
         return frame
 
-    filters, multi_filter_runtime = load_filter('anonymous')  # 使用するフィルターを指定
+    filters, multi_filter_runtime = load_filter(mask_name)  # 使用するフィルターを指定
 
     for idx, filter in enumerate(filters):
         filter_runtime = multi_filter_runtime[idx]
@@ -203,15 +213,19 @@ def apply_face_mask(frame, points2):
             hull1 = filter_runtime['hull']
             warped_img = np.copy(frame)
             hull2 = [points2[hullIndex[i][0]] for i in range(len(hullIndex))]
+
             mask1 = np.zeros((warped_img.shape[0], warped_img.shape[1]), dtype=np.float32)
             mask1 = cv2.merge((mask1, mask1, mask1))
             img1_alpha_mask = cv2.merge((img1_alpha, img1_alpha, img1_alpha))
 
             # 各三角形領域を変形して重ね合わせ
             for i in range(len(dt)):
-                t1, t2 = [hull1[dt[i][j]] for j in range(3)], [hull2[dt[i][j]] for j in range(3)]
-                fbc.warpTriangle(img1, warped_img, t1, t2)
-                fbc.warpTriangle(img1_alpha_mask, mask1, t1, t2)
+                t1 = [hull1[dt[i][j]] for j in range(3)]
+                t2 = [hull2[dt[i][j]] for j in range(3)]
+
+                if is_valid_triangle(t1, warped_img.shape) and is_valid_triangle(t2, warped_img.shape):
+                    fbc.warpTriangle(img1, warped_img, t1, t2)
+                    fbc.warpTriangle(img1_alpha_mask, mask1, t1, t2)
 
             # マスクをぼかして合成
             mask1 = cv2.GaussianBlur(mask1, (3, 3), 10)
@@ -219,20 +233,47 @@ def apply_face_mask(frame, points2):
             temp1 = np.multiply(warped_img, (mask1 * (1.0 / 255)))
             temp2 = np.multiply(frame, (mask2 * (1.0 / 255)))
             frame = np.uint8(temp1 + temp2)
+
         else:
             # 顔に合わせてフィルターを移動して合成
-            dst_points = [points2[int(list(points1.keys())[0])], points2[int(list(points1.keys())[1])]]
-            tform = fbc.similarityTransform(list(points1.values()), dst_points)
-            trans_img = cv2.warpAffine(img1, tform, (frame.shape[1], frame.shape[0]))
-            trans_alpha = cv2.warpAffine(img1_alpha, tform, (frame.shape[1], frame.shape[0]))
-            mask1 = cv2.merge((trans_alpha, trans_alpha, trans_alpha))
-            mask1 = cv2.GaussianBlur(mask1, (3, 3), 10)
-            mask2 = (255.0, 255.0, 255.0) - mask1
-            temp1 = np.multiply(trans_img, (mask1 * (1.0 / 255)))
-            temp2 = np.multiply(frame, (mask2 * (1.0 / 255)))
-            frame = np.uint8(temp1 + temp2)
+            try:
+                dst_points = [points2[int(list(points1.keys())[0])], points2[int(list(points1.keys())[1])]]
+                tform = fbc.similarityTransform(list(points1.values()), dst_points)
+
+                trans_img = cv2.warpAffine(img1, tform, (frame.shape[1], frame.shape[0]))
+                trans_alpha = cv2.warpAffine(img1_alpha, tform, (frame.shape[1], frame.shape[0]))
+
+                mask1 = cv2.merge((trans_alpha, trans_alpha, trans_alpha))
+                mask1 = cv2.GaussianBlur(mask1, (3, 3), 10)
+
+                # マスク領域を画面サイズ内にクリップ
+                mask1 = np.clip(mask1, 0, 255)
+
+                mask2 = (255.0, 255.0, 255.0) - mask1
+                temp1 = np.multiply(trans_img, (mask1 * (1.0 / 255)))
+                temp2 = np.multiply(frame, (mask2 * (1.0 / 255)))
+                frame = np.uint8(temp1 + temp2)
+
+            except Exception as e:
+                print(f"Error applying filter: {e}")
+                continue
 
     return frame
+
+
+def is_valid_triangle(triangle, img_shape):
+    """
+    三角形が画像範囲内かどうかを判定する
+    :param triangle: 三角形を構成する3点
+    :param img_shape: 画像の形状
+    :return: True if valid, False otherwise
+    """
+    h, w = img_shape[:2]
+    for x, y in triangle:
+        if x < 0 or y < 0 or x >= w or y >= h:
+            return False
+    return True
+
 
 
 if __name__=="__main":
