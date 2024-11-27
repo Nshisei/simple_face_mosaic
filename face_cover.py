@@ -1,6 +1,6 @@
 import cv2
 import numpy as np
-cover_img = cv2.imread("./img/face_img.png", cv2.IMREAD_UNCHANGED)
+cover_img = cv2.imread("./face_mask/filters/smile.png", cv2.IMREAD_UNCHANGED)
 
 def overlay_image_alpha(img, x, y, overlay_size=None):
     print("start overlay")
